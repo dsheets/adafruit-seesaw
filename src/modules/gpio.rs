@@ -1,6 +1,6 @@
 use crate::{
     common::{Modules, Reg},
-    DriverExt,
+    SeesawDevice, SeesawError,
 };
 
 /// WO - 32 bits
@@ -82,49 +82,70 @@ const PULL_DISABLE: &Reg = &[Modules::Gpio.into_u8(), 0x0C];
 /// 5V.
 ///
 /// The module base register address for the GPIO module is 0x01.
-pub trait GpioModule<D: crate::Driver>: crate::SeesawDevice<Driver = D> {
-    fn digital_read(&mut self, pin: u8) -> Result<bool, crate::SeesawError<D::I2cError>> {
+pub trait GpioModule: SeesawDevice {
+    async fn digital_read(&mut self, pin: u8) -> Result<bool, SeesawError<Self::Platform>> {
         self.digital_read_bulk()
+            .await
             .map(|pins| !matches!(pins >> pin & 0x1, 1))
     }
 
-    fn digital_read_bulk(&mut self) -> Result<u32, crate::SeesawError<D::I2cError>> {
+    async fn digital_read_bulk(&mut self) -> Result<u32, SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .read_u32(addr, GPIO)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 
-    fn set_pin_mode(
+    async fn set_pin_mode(
         &mut self,
         pin: u8,
         mode: PinMode,
-    ) -> Result<(), crate::SeesawError<D::I2cError>> {
-        self.set_pin_mode_bulk(1 << pin, mode)
+    ) -> Result<(), SeesawError<Self::Platform>> {
+        self.set_pin_mode_bulk(1 << pin, mode).await
     }
 
-    fn set_pin_mode_bulk(
+    async fn set_pin_mode_bulk(
         &mut self,
         pins: u32,
         mode: PinMode,
-    ) -> Result<(), crate::SeesawError<D::I2cError>> {
+    ) -> Result<(), SeesawError<Self::Platform>> {
         let addr = self.addr();
         let bus = self.driver();
 
         match mode {
-            PinMode::Output => bus.write_u32(addr, GPIO, pins),
-            PinMode::Input => bus.write_u32(addr, SET_INPUT, pins),
-            PinMode::InputPullup => bus
+            PinMode::Output => bus
+                .write_u32(addr, GPIO, pins)
+                .await
+                .map_err(Self::error_i2c),
+            PinMode::Input => bus
                 .write_u32(addr, SET_INPUT, pins)
-                .and_then(|_| bus.write_u32(addr, PULL_ENABLE, pins))
-                .and_then(|_| bus.write_u32(addr, SET_HIGH, pins)),
-            PinMode::InputPulldown => bus
-                .write_u32(addr, SET_INPUT, pins)
-                .and_then(|_| bus.write_u32(addr, PULL_ENABLE, pins))
-                .and_then(|_| bus.write_u32(addr, SET_LOW, pins)),
+                .await
+                .map_err(Self::error_i2c),
+            PinMode::InputPullup => {
+                bus.write_u32(addr, SET_INPUT, pins)
+                    .await
+                    .map_err(Self::error_i2c)?;
+                bus.write_u32(addr, PULL_ENABLE, pins)
+                    .await
+                    .map_err(Self::error_i2c)?;
+                bus.write_u32(addr, SET_HIGH, pins)
+                    .await
+                    .map_err(Self::error_i2c)
+            }
+            PinMode::InputPulldown => {
+                bus.write_u32(addr, SET_INPUT, pins)
+                    .await
+                    .map_err(Self::error_i2c)?;
+                bus.write_u32(addr, PULL_ENABLE, pins)
+                    .await
+                    .map_err(Self::error_i2c)?;
+                bus.write_u32(addr, SET_LOW, pins)
+                    .await
+                    .map_err(Self::error_i2c)
+            }
             _ => unimplemented!("Other pins modes are not supported."),
         }
-        .map_err(crate::SeesawError::I2c)
     }
 }
 

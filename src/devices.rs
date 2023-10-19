@@ -4,15 +4,15 @@ use crate::{
         adc::AdcModule,
         encoder::EncoderModule,
         gpio::{GpioModule, PinMode},
-        neopixel::NeopixelModule,
+        neopixel::{NeopixelModule, GRB, RGB},
         status::StatusModule,
         timer::TimerModule,
     },
-    seesaw_device, HardwareId, SeesawDeviceInit,
+    seesaw_device, HardwareId, Platform, SeesawDeviceInit, SeesawError,
 };
 
 /// All devices implement the status module
-impl<D: Driver, T: super::SeesawDevice<Driver = D>> StatusModule<D> for T {}
+impl<T: super::SeesawDevice> StatusModule for T {}
 
 seesaw_device! {
     #[doc(hidden)]
@@ -23,9 +23,9 @@ seesaw_device! {
     modules: []
 }
 
-impl<D: Driver> SeesawDeviceInit<D> for GenericDevice<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset().map(|_| self)
+impl<P: Platform, const N: usize> SeesawDeviceInit for GenericDevice<P, N> {
+    async fn init(mut self) -> Result<Self, SeesawError<Self::Platform>> {
+        self.reset().await.map(|_| self)
     }
 }
 
@@ -56,36 +56,36 @@ seesaw_device! {
     ]
 }
 
-impl<D: Driver> SeesawDeviceInit<D> for ArcadeButton1x4<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset_and_verify_seesaw()
-            .and_then(|_| self.enable_buttons())
-            .map(|_| self)
+impl<P: Platform, const N: usize> SeesawDeviceInit for ArcadeButton1x4<P, N> {
+    async fn init(mut self) -> Result<Self, SeesawError<Self::Platform>> {
+        self.reset_and_verify_seesaw().await?;
+        self.enable_buttons().await?;
+        Ok(self)
     }
 }
 
-impl<D: Driver> ArcadeButton1x4<D> {
-    pub fn button_values(&mut self) -> Result<[bool; 4], crate::SeesawError<D::I2cError>> {
-        [18, 19, 20, 2].try_map(|pin| self.digital_read(pin))
+impl<P: Platform, const N: usize> ArcadeButton1x4<P, N> {
+    pub async fn button_values(&mut self) -> Result<[bool; 4], SeesawError<P>> {
+        let mut btns = [false; 4];
+        for (i, &pin) in [18u8, 19, 20, 2].iter().enumerate() {
+            btns[i] = self.digital_read(pin).await?;
+        }
+        Ok::<[bool; 4], SeesawError<P>>(btns)
     }
 
     /// Set the pin mode of the 4 buttons to input pullup:
-    pub fn enable_buttons(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        self.set_pin_mode(18, PinMode::InputPullup)?;
-        self.set_pin_mode(19, PinMode::InputPullup)?;
-        self.set_pin_mode(20, PinMode::InputPullup)?;
-        self.set_pin_mode(2, PinMode::InputPullup)?;
-        Ok(())
+    pub async fn enable_buttons(&mut self) -> Result<(), SeesawError<P>> {
+        self.set_pin_mode(18, PinMode::InputPullup).await?;
+        self.set_pin_mode(19, PinMode::InputPullup).await?;
+        self.set_pin_mode(20, PinMode::InputPullup).await?;
+        self.set_pin_mode(2, PinMode::InputPullup).await
     }
 
-    pub fn set_led_duty_cycles(
-        &mut self,
-        pwms: &[u8; 4],
-    ) -> Result<(), crate::SeesawError<D::I2cError>> {
-        [12u8, 13, 0, 1]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, &pin)| self.analog_write(pin, pwms[i]))
+    pub async fn set_led_duty_cycles(&mut self, pwms: &[u8; 4]) -> Result<(), SeesawError<P>> {
+        for (i, &pin) in [12u8, 13, 0, 1].iter().enumerate() {
+            self.analog_write(pin, pwms[i]).await?
+        }
+        Ok::<(), SeesawError<P>>(())
     }
 }
 
@@ -97,29 +97,30 @@ seesaw_device! {
     default_addr: 0x30,
     modules: [
         GpioModule,
-        NeopixelModule { num_leds: 4, pin: 3 },
+        NeopixelModule<GRB> { num_leds: 4, pin: 3 },
     ]
 }
 
-impl<D: Driver> SeesawDeviceInit<D> for NeoKey1x4<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset_and_verify_seesaw()
-            .and_then(|_| self.enable_neopixel())
-            .and_then(|_| self.enable_button_pins())
-            .map(|_| self)
+impl<P: Platform, const N: usize> SeesawDeviceInit for NeoKey1x4<P, N> {
+    async fn init(mut self) -> Result<Self, SeesawError<P>> {
+        self.reset_and_verify_seesaw().await?;
+        self.enable_neopixel().await?;
+        self.enable_button_pins().await?;
+        Ok(self)
     }
 }
 
-impl<D: Driver> NeoKey1x4<D> {
-    pub fn enable_button_pins(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+impl<P: Platform, const N: usize> NeoKey1x4<P, N> {
+    pub async fn enable_button_pins(&mut self) -> Result<(), SeesawError<P>> {
         self.set_pin_mode_bulk(
             (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7),
             PinMode::InputPullup,
         )
+        .await
     }
 
-    pub fn keys(&mut self) -> Result<u8, crate::SeesawError<D::I2cError>> {
-        self.digital_read_bulk().map(|r| (r >> 4 & 0xF) as u8)
+    pub async fn keys(&mut self) -> Result<u8, SeesawError<P>> {
+        self.digital_read_bulk().await.map(|r| (r >> 4 & 0xF) as u8)
     }
 }
 
@@ -132,21 +133,21 @@ seesaw_device!(
     modules: [
         AdcModule,
         GpioModule,
-        NeopixelModule { num_leds: 4, pin: 14},
+        NeopixelModule<RGB> { num_leds: 4, pin: 14 },
     ]
 );
 
-impl<D: Driver> SeesawDeviceInit<D> for NeoSlider<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset_and_verify_seesaw()
-            .and_then(|_| self.enable_neopixel())
-            .map(|_| self)
+impl<P: Platform, const N: usize> SeesawDeviceInit for NeoSlider<P, N> {
+    async fn init(mut self) -> Result<Self, SeesawError<P>> {
+        self.reset_and_verify_seesaw().await?;
+        self.enable_neopixel().await?;
+        Ok(self)
     }
 }
 
-impl<D: Driver> NeoSlider<D> {
-    pub fn slider_value(&mut self) -> Result<u16, crate::SeesawError<D::I2cError>> {
-        self.analog_read(18)
+impl<P: Platform, const N: usize> NeoSlider<P, N> {
+    pub async fn slider_value(&mut self) -> Result<u16, SeesawError<P>> {
+        self.analog_read(18).await
     }
 }
 
@@ -159,15 +160,15 @@ seesaw_device! {
     modules:  [
         EncoderModule { button_pin: 24 },
         GpioModule,
-        NeopixelModule { num_leds: 1, pin: 6 },
+        NeopixelModule<RGB> { num_leds: 1, pin: 6 },
     ]
 }
 
-impl<D: Driver> SeesawDeviceInit<D> for RotaryEncoder<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset_and_verify_seesaw()
-            .and_then(|_| self.enable_button())
-            .and_then(|_| self.enable_neopixel())
-            .map(|_| self)
+impl<P: Platform, const N: usize> SeesawDeviceInit for RotaryEncoder<P, N> {
+    async fn init(mut self) -> Result<Self, SeesawError<P>> {
+        self.reset_and_verify_seesaw().await?;
+        self.enable_button().await?;
+        self.enable_neopixel().await?;
+        Ok(self)
     }
 }

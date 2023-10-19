@@ -1,7 +1,9 @@
+use embassy_time::Duration;
+
 use super::gpio::{GpioModule, PinMode};
 use crate::{
     common::{Modules, Reg},
-    DriverExt,
+    SeesawError,
 };
 
 #[allow(dead_code)]
@@ -11,50 +13,56 @@ const INT_CLR: &Reg = &[Modules::Encoder.into_u8(), 0x20];
 const POSITION: &Reg = &[Modules::Encoder.into_u8(), 0x30];
 const DELTA: &Reg = &[Modules::Encoder.into_u8(), 0x40];
 
-pub trait EncoderModule<D: crate::Driver>: GpioModule<D> {
+pub trait EncoderModule: GpioModule {
     const ENCODER_BTN_PIN: u8;
 
-    fn enable_button(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+    async fn enable_button(&mut self) -> Result<(), SeesawError<Self::Platform>> {
         self.set_pin_mode(Self::ENCODER_BTN_PIN, PinMode::InputPullup)
-            .map(|_| self.driver().delay_us(125))
+            .await
+            .map(|_| self.driver().set_timeout(Duration::from_micros(125)))
     }
 
-    fn button(&mut self) -> Result<bool, crate::SeesawError<D::I2cError>> {
-        self.digital_read(Self::ENCODER_BTN_PIN)
+    async fn button(&mut self) -> Result<bool, SeesawError<Self::Platform>> {
+        self.digital_read(Self::ENCODER_BTN_PIN).await
     }
 
-    fn delta(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
+    async fn delta(&mut self) -> Result<i32, SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .read_i32(addr, DELTA)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 
-    fn disable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+    async fn disable_interrupt(&mut self) -> Result<(), SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .write_u8(addr, INT_CLR, 1)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 
-    fn enable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+    async fn enable_interrupt(&mut self) -> Result<(), SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .write_u8(addr, INT_SET, 1)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 
-    fn position(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
+    async fn position(&mut self) -> Result<i32, SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .read_i32(addr, POSITION)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 
-    fn set_position(&mut self, pos: i32) -> Result<(), crate::SeesawError<D::I2cError>> {
+    async fn set_position(&mut self, pos: i32) -> Result<(), SeesawError<Self::Platform>> {
         let addr = self.addr();
         self.driver()
             .write_i32(addr, POSITION, pos)
-            .map_err(crate::SeesawError::I2c)
+            .await
+            .map_err(Self::error_i2c)
     }
 }
