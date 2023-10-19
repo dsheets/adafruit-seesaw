@@ -13,7 +13,7 @@ macro_rules! seesaw_device {
             })?),*
             $(,)?
         ]
-         $(,)?
+        $(,)?
     ) => {
         $(#[$attr])*
         ///
@@ -93,6 +93,12 @@ macro_rules! impl_device_module {
     };
     ($device:ident, GpioModule $({})?) => {
         impl<P: $crate::Platform, const N: usize> $crate::modules::gpio::GpioModule
+            for $device<P, N>
+        {
+        }
+    };
+    ($device:ident, KeypadModule { num_keys: $num_keys:expr }) => {
+        impl<P: $crate::Platform, const N: usize> $crate::modules::keypad::KeypadModule<$num_keys>
             for $device<P, N>
         {
         }

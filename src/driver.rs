@@ -2,9 +2,7 @@ extern crate alloc;
 
 use crate::common::Reg;
 use embassy_time::{Duration, Instant, Timer};
-use embedded_hal_async::i2c::{
-    self, I2c,
-};
+use embedded_hal_async::i2c::{self, I2c};
 
 const DELAY: Duration = Duration::from_micros(125);
 
@@ -64,13 +62,12 @@ impl<P: Platform> Driver<P> {
         self.timeout = Instant::now() + timeout;
     }
 
-    pub async fn register_read<const N: usize>(
+    pub async fn register_read_into(
         &mut self,
         addr: i2c::SevenBitAddress,
         reg: &Reg,
-    ) -> Result<[u8; N], <P::I2c as i2c::ErrorType>::Error> {
-        let mut buffer = [0u8; N];
-
+        buf: &mut [u8],
+    ) -> Result<(), <P::I2c as i2c::ErrorType>::Error> {
         let dur = self.lock_timeout();
         if dur.as_ticks() > 0 {
             Timer::after(dur).await;
@@ -79,14 +76,24 @@ impl<P: Platform> Driver<P> {
         match self.platform.i2c().write(addr, reg).await {
             Ok(()) => {
                 Timer::after(DELAY).await;
-                self.platform.i2c().read(addr, &mut buffer).await?;
-                Ok(buffer)
+                self.platform.i2c().read(addr, buf).await?;
+                Ok(())
             }
             Err(e) => {
                 self.set_timeout(DELAY);
                 Err(e)
             }
         }
+    }
+
+    pub async fn register_read<const N: usize>(
+        &mut self,
+        addr: i2c::SevenBitAddress,
+        reg: &Reg,
+    ) -> Result<[u8; N], <P::I2c as i2c::ErrorType>::Error> {
+        let mut buffer = [0u8; N];
+        self.register_read_into(addr, reg, &mut buffer).await?;
+        Ok(buffer)
     }
 
     pub async fn register_write(

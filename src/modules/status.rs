@@ -1,5 +1,4 @@
 use embassy_time::Duration;
-use esp_println::println;
 
 use crate::{Modules, Reg, SeesawDevice, SeesawError};
 
