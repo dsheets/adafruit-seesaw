@@ -1,7 +1,7 @@
 use crate::{
     common::{Modules, Reg},
     driver::Driver,
-    DriverExt, SeesawDevice, SeesawError,
+    DriverExt, RegValue, SeesawDevice, SeesawError,
 };
 
 /// WO - 8 bits
@@ -76,7 +76,10 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
         let addr = self.addr();
 
         self.driver()
-            .register_write(addr, SET_BUF, &[zero, one, r, g, b, 0x00])
+            .register_write(
+                addr,
+                &RegValue::<6>::new(SET_BUF).with_bytes(&[zero, one, r, g, b, 0x00]),
+            )
             .map_err(SeesawError::I2c)
     }
 
@@ -90,14 +93,13 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
         let addr = self.addr();
 
         (0..Self::N_LEDS)
-            .into_iter()
             .try_for_each(|n| {
                 let [zero, one] = u16::to_be_bytes(3 * n);
                 let color = colors[n as usize];
                 self.driver().register_write(
                     addr,
-                    SET_BUF,
-                    &[zero, one, color.0, color.1, color.2, 0x00],
+                    &RegValue::<6>::new(SET_BUF)
+                        .with_bytes(&[zero, one, color.0, color.1, color.2, 0x00]),
                 )
             })
             .map_err(SeesawError::I2c)
@@ -107,7 +109,7 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
         let addr = self.addr();
 
         self.driver()
-            .register_write(addr, SHOW, &[])
+            .register_write(addr, &RegValue::<0>::new(SHOW))
             .map(|_| self.driver().delay_us(125))
             .map_err(SeesawError::I2c)
     }

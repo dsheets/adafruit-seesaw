@@ -1,4 +1,6 @@
-use crate::common::Reg;
+use core::mem;
+
+use crate::{common::Reg, RegValue};
 use embedded_hal::blocking::{delay, i2c};
 
 const DELAY_TIME: u32 = 125;
@@ -30,7 +32,14 @@ macro_rules! impl_integer_write {
             reg: &Reg,
             value: $nty,
         ) -> Result<(), Self::Error> {
-            self.register_write(addr, reg, &<$nty>::to_be_bytes(value))
+            // unfortunately, this appears to be currently necessary
+            // in order to introduce an existential bounded const
+            // generic
+            #[inline(always)]
+            fn f(reg: &Reg) -> RegValue<{ mem::size_of::<$nty>() }> {
+                RegValue::new(reg)
+            }
+            self.register_write(addr, &f(reg).with_bytes(&<$nty>::to_be_bytes(value)))
         }
     };
 }
@@ -56,11 +65,10 @@ pub trait DriverExt {
     fn register_write<const N: usize>(
         &mut self,
         addr: i2c::SevenBitAddress,
-        reg: &Reg,
-        bytes: &[u8; N],
+        regval: &RegValue<N>,
     ) -> Result<(), Self::Error>
     where
-        [(); N + 2]: Sized;
+        [(); 2 + N]: Sized;
 
     impl_integer_read! { read_u8 u8 }
     impl_integer_read! { read_u16 u16 }
@@ -98,17 +106,12 @@ impl<T: Driver> DriverExt for T {
     fn register_write<const N: usize>(
         &mut self,
         addr: i2c::SevenBitAddress,
-        reg: &Reg,
-        bytes: &[u8; N],
+        regval: &RegValue<N>,
     ) -> Result<(), Self::Error>
     where
-        [(); N + 2]: Sized,
+        [(); 2 + N]: Sized,
     {
-        let mut buffer = [0u8; N + 2];
-        buffer[0..2].copy_from_slice(reg);
-        buffer[2..].copy_from_slice(bytes);
-
-        self.write(addr, &buffer)?;
+        self.write(addr, regval.buffer())?;
         self.delay_us(DELAY_TIME);
         Ok(())
     }
