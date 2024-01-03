@@ -1,37 +1,3 @@
-pub type Reg = [u8; 2];
-
-pub struct RegValue<const N: usize>
-where
-    [(); 2 + N]: Sized,
-{
-    data: [u8; 2 + N],
-}
-
-impl<const N: usize> RegValue<N>
-where
-    [(); 2 + N]: Sized,
-{
-    pub fn new(reg: &Reg) -> Self {
-        let mut data = [0; 2 + N];
-        data[0..2].copy_from_slice(reg);
-        Self { data }
-    }
-
-    pub fn with_bytes(mut self, bytes: &[u8]) -> Self {
-        let len = bytes.len();
-        if len > N {
-            panic!("can't copy {len} bytes into {N} bytes")
-        }
-
-        self.data[2..].copy_from_slice(bytes);
-        self
-    }
-
-    pub fn buffer(&self) -> &[u8] {
-        &self.data
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HardwareId {
     ATTINY817 = 0x87,

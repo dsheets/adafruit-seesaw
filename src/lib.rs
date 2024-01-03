@@ -9,9 +9,11 @@ pub mod devices;
 mod driver;
 mod macros;
 pub mod modules;
+mod reg;
 pub use common::*;
 pub use devices::*;
 pub use driver::*;
+pub use reg::*;
 
 pub mod prelude {
     pub use super::{

@@ -4,7 +4,7 @@ use crate::{
         adc::AdcModule,
         encoder::EncoderModule,
         gpio::{GpioModule, PinMode},
-        neopixel::NeopixelModule,
+        neopixel::{NeopixelModule, RGB},
         status::StatusModule,
         timer::TimerModule,
     },
@@ -97,7 +97,7 @@ seesaw_device! {
     default_addr: 0x30,
     modules: [
         GpioModule,
-        NeopixelModule { num_leds: 4, pin: 3 },
+        NeopixelModule<RGB> { num_leds: 4, pin: 3 },
     ]
 }
 
@@ -132,7 +132,7 @@ seesaw_device!(
     modules: [
         AdcModule,
         GpioModule,
-        NeopixelModule { num_leds: 4, pin: 14},
+        NeopixelModule<RGB> { num_leds: 4, pin: 14},
     ]
 );
 
@@ -159,7 +159,7 @@ seesaw_device! {
     modules:  [
         EncoderModule { button_pin: 24 },
         GpioModule,
-        NeopixelModule { num_leds: 1, pin: 6 },
+        NeopixelModule<RGB> { num_leds: 1, pin: 6 },
     ]
 }
 

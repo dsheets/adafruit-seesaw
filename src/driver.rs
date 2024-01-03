@@ -1,6 +1,6 @@
 use core::mem;
 
-use crate::{common::Reg, RegValue};
+use crate::{Reg, RegValue};
 use embedded_hal::blocking::{delay, i2c};
 
 const DELAY_TIME: u32 = 125;

@@ -1,7 +1,4 @@
-use crate::{
-    common::{Modules, Reg},
-    DriverExt,
-};
+use crate::{common::Modules, DriverExt, Reg};
 
 /// WO - 32 bits
 /// Writing a 1 to any bit in this register sets the direction of the

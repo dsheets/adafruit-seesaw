@@ -1,8 +1,5 @@
 use super::gpio::{GpioModule, PinMode};
-use crate::{
-    common::{Modules, Reg},
-    DriverExt,
-};
+use crate::{common::Modules, DriverExt, Reg};
 
 #[allow(dead_code)]
 const STATUS: &Reg = &[Modules::Encoder.into_u8(), 0x00];
