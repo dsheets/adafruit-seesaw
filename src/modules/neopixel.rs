@@ -88,6 +88,19 @@ pub trait NeopixelModule<D: Driver, C: ColorLayout>: SeesawDevice<Driver = D> {
     /// The number of neopixels on the device
     const N_LEDS: u16 = 1;
 
+    /// The largest I2C write that the device can perform
+    const MAX_I2C_WRITE: usize = 32;
+
+    /// The largest register value that the device can write
+    const MAX_REG_WRITE: usize = Self::MAX_I2C_WRITE - 2;
+
+    /// The largest number of colors that the device can write
+    const MAX_COLOR_WRITE: usize = Self::MAX_REG_WRITE / C::Vector::DIMS;
+
+    /// The largest number of entire color vector bytes that the device can
+    /// write
+    const MAX_COLOR_BYTES_WRITE: usize = Self::MAX_COLOR_WRITE * C::Vector::DIMS;
+
     fn enable_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
         let addr = self.addr();
 
@@ -120,8 +133,8 @@ pub trait NeopixelModule<D: Driver, C: ColorLayout>: SeesawDevice<Driver = D> {
 
     fn set_neopixel_color(&mut self, c: C::Vector) -> Result<(), SeesawError<D::I2cError>>
     where
-        [(); mem::size_of::<u16>() + C::Vector::DIMS]: Sized,
-        [(); 2 + (mem::size_of::<u16>() + C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + Self::MAX_COLOR_WRITE * C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + (1 % Self::MAX_COLOR_WRITE) * C::Vector::DIMS)]: Sized,
     {
         self.set_nth_neopixel_color(0, c)
     }
@@ -132,43 +145,71 @@ pub trait NeopixelModule<D: Driver, C: ColorLayout>: SeesawDevice<Driver = D> {
         color: C::Vector,
     ) -> Result<(), SeesawError<D::I2cError>>
     where
-        [(); mem::size_of::<u16>() + C::Vector::DIMS]: Sized,
-        [(); 2 + (mem::size_of::<u16>() + C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + Self::MAX_COLOR_WRITE * C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + (1 % Self::MAX_COLOR_WRITE) * C::Vector::DIMS)]: Sized,
     {
-        assert!(n < Self::N_LEDS);
-        let offset = u16::to_be_bytes(C::Vector::DIMS as u16 * n);
-        let mut regval = RegValue::<{ mem::size_of::<u16>() + C::Vector::DIMS }>::new(SET_BUF);
-        regval[0..2].copy_from_slice(&offset);
-        C::blit(&color, &mut regval[2..]);
-        let addr = self.addr();
+        self.set_neopixel_colors(n as usize, &[color; 1])
+    }
 
+    fn write_neopixel_buf<const N: usize>(
+        &mut self,
+        reg_off: u16,
+        colors: &[C::Vector; N],
+    ) -> Result<(), SeesawError<D::I2cError>>
+    where
+        [(); mem::size_of::<u16>() + N * C::Vector::DIMS]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + N * C::Vector::DIMS)]: Sized,
+    {
+        let mut regval = RegValue::<{ mem::size_of::<u16>() + N * C::Vector::DIMS }>::new(SET_BUF);
+
+        regval[0..2].copy_from_slice(&u16::to_be_bytes(reg_off));
+        let mut boff = 2;
+        for c in colors.iter() {
+            C::blit(c, &mut regval[boff..boff + C::Vector::DIMS]);
+            boff += C::Vector::DIMS;
+        }
+
+        let addr = self.addr();
         self.driver()
             .register_write(addr, &regval)
             .map_err(SeesawError::I2c)
     }
 
-    fn set_neopixel_colors(
+    fn set_neopixel_colors<const N: usize>(
         &mut self,
-        colors: &[C::Vector; Self::N_LEDS as usize],
+        offset: usize,
+        colors: &[C::Vector; N],
     ) -> Result<(), SeesawError<D::I2cError>>
     where
-        [(); Self::N_LEDS as usize]: Sized,
-        [(); mem::size_of::<u16>() + C::Vector::DIMS]: Sized,
-        [(); 2 + (mem::size_of::<u16>() + C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + Self::MAX_COLOR_WRITE * C::Vector::DIMS)]: Sized,
+        [(); 2 + (mem::size_of::<u16>() + (N % Self::MAX_COLOR_WRITE) * C::Vector::DIMS)]: Sized,
     {
-        let addr = self.addr();
+        assert!(offset + N < Self::N_LEDS as usize);
 
-        (0..Self::N_LEDS)
-            .try_for_each(|n| {
-                let offset = u16::to_be_bytes(C::Vector::DIMS as u16 * n);
-                let mut regval =
-                    RegValue::<{ mem::size_of::<u16>() + C::Vector::DIMS }>::new(SET_BUF);
-                regval[0..2].copy_from_slice(&offset);
-                let color = &colors[n as usize];
-                C::blit(color, &mut regval[2..]);
-                self.driver().register_write(addr, &regval)
-            })
-            .map_err(SeesawError::I2c)
+        let tail = N % Self::MAX_COLOR_WRITE;
+        let bulk = N - tail;
+
+        let mut reg_off: u16 = (offset * C::Vector::DIMS) as u16;
+        let mut color_off: usize = 0;
+
+        while color_off < bulk {
+            let sub_colors: &[C::Vector; Self::MAX_COLOR_WRITE] = colors
+                [color_off..color_off + Self::MAX_COLOR_WRITE]
+                .try_into()
+                .unwrap();
+            self.write_neopixel_buf::<{ Self::MAX_COLOR_WRITE }>(reg_off, sub_colors)?;
+
+            color_off += Self::MAX_COLOR_WRITE;
+            reg_off += Self::MAX_COLOR_BYTES_WRITE as u16;
+        }
+
+        if tail != 0 {
+            let sub_colors: &[C::Vector; N % Self::MAX_COLOR_WRITE] =
+                colors[color_off..color_off + tail].try_into().unwrap();
+            self.write_neopixel_buf::<{ N % Self::MAX_COLOR_WRITE }>(reg_off, sub_colors)?;
+        }
+
+        Ok(())
     }
 
     fn sync_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
