@@ -1,5 +1,3 @@
-use core::ops::Range;
-
 use crate::{
     common::{Modules, Reg},
     driver::Driver,
@@ -31,8 +29,7 @@ pub enum EventType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct KeyEvent {
     pub event: EventType,
-    pub x: u8,
-    pub y: u8,
+    pub key: u8,
 }
 
 pub trait KeypadModule<D: Driver>: SeesawDevice<Driver = D> {
@@ -52,8 +49,7 @@ pub trait KeypadModule<D: Driver>: SeesawDevice<Driver = D> {
 
     fn watch_event(
         &mut self,
-        x: u8,
-        y: u8,
+        key: u8,
         types: &[EventType],
         enable: bool,
     ) -> Result<(), SeesawError<D::I2cError>> {
@@ -61,43 +57,28 @@ pub trait KeypadModule<D: Driver>: SeesawDevice<Driver = D> {
         if enable {
             v += 1;
         }
-        let key = (y << 3) + x;
         let addr = self.addr();
         self.driver()
             .register_write(addr, EVENT, &[key, v])
             .map_err(SeesawError::I2c)
     }
 
-    fn bulk_event_enable(
-        &mut self,
-        x: Range<u8>,
-        y: Range<u8>,
-        types: &[EventType],
-    ) -> Result<(), SeesawError<D::I2cError>> {
-        for y in y {
-            for x in x.clone() {
-                self.watch_event(x, y, types, true)?;
-            }
-        }
-        Ok(())
-    }
-
     fn poll(&mut self) -> Result<KeyEventIter, crate::SeesawError<D::I2cError>> {
         let addr = self.addr();
-        let mut kei = KeyEventIter::default();
-        kei.count = self
-            .driver()
-            .read_u8(addr, COUNT)
-            .map_err(SeesawError::I2c)?;
+        let mut kei = KeyEventIter {
+            count: self
+                .driver()
+                .read_u8(addr, COUNT)
+                .map_err(SeesawError::I2c)?,
+            ..Default::default()
+        };
         if kei.count == 0 {
             return Ok(kei);
         }
         if kei.count > 16 {
             kei.count = 16;
         }
-        // problems with error type
-        // self.driver().read(addr, &mut kei.buf[0..(kei.count as usize)]).map_err(SeesawError::I2c)?;
-        // this may read too much.
+
         kei.buf = self
             .driver()
             .register_read(addr, FIFO)
@@ -115,6 +96,7 @@ pub struct KeyEventIter {
 
 impl Iterator for KeyEventIter {
     type Item = KeyEvent;
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur >= self.count {
             return None;
@@ -129,9 +111,7 @@ impl Iterator for KeyEventIter {
             _ => unreachable!(),
         };
         rec >>= 2;
-        let x = rec & 0x07;
-        rec >>= 3;
-        let y = rec;
-        Some(KeyEvent { event, x, y })
+        let key = rec;
+        Some(KeyEvent { event, key })
     }
 }

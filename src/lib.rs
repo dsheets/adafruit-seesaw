@@ -17,7 +17,7 @@ pub mod prelude {
     pub use super::{
         devices::*,
         driver::DriverExt,
-        modules::{adc::*, encoder::*, gpio::*, neopixel::*, status::*, timer::*, keypad::*},
+        modules::{adc::*, encoder::*, gpio::*, keypad::*, neopixel::*, status::*, timer::*},
         SeesawDevice, SeesawDeviceInit,
     };
 }
