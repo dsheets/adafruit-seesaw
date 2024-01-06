@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::common::Reg;
 use embedded_hal::blocking::{delay, i2c};
 
@@ -9,12 +11,19 @@ const DELAY_TIME: u32 = 125;
 pub trait I2cDriver: i2c::Write + i2c::WriteRead + i2c::Read {
     type I2cError: From<<Self as i2c::Write>::Error>
         + From<<Self as i2c::WriteRead>::Error>
-        + From<<Self as i2c::Read>::Error>;
+        + From<<Self as i2c::Read>::Error>
+        + fmt::Debug
+        + fmt::Display;
 }
 
 impl<T, E> I2cDriver for T
 where
     T: i2c::Write<Error = E> + i2c::WriteRead<Error = E> + i2c::Read<Error = E>,
+    E: From<<T as i2c::Write>::Error>
+        + From<<T as i2c::WriteRead>::Error>
+        + From<<T as i2c::Read>::Error>
+        + fmt::Display
+        + fmt::Debug,
 {
     type I2cError = E;
 }
