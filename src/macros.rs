@@ -77,9 +77,13 @@ macro_rules! impl_device_module {
         impl<D: $crate::Driver> $crate::modules::gpio::GpioModule<D> for $device<D> {}
     };
     ($device:ident, NeopixelModule<$colors:ty> { num_leds: $num_leds:expr, pin: $pin:expr }) => {
+        impl_device_module!($device, NeopixelModule<$colors> { num_leds: $num_leds, pin: $pin, max_i2c_write: 32 });
+    };
+    ($device:ident, NeopixelModule<$colors:ty> { num_leds: $num_leds:expr, pin: $pin:expr, max_i2c_write: $max_i2c_write:expr }) => {
         impl<D: $crate::Driver> $crate::modules::neopixel::NeopixelModule<D, $colors>
             for $device<D>
         {
+            const MAX_I2C_WRITE: usize = $max_i2c_write;
             const N_LEDS: u16 = $num_leds;
             const PIN: u8 = $pin;
         }
